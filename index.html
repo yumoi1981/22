@@ -1038,7 +1038,7 @@ function update(dt) {
   if (!r.demo && r.phase !== 'over' && r.phase !== 'clear') step(r, dt);
   camZ = r.d - 6;
   // 使い魔の位置（ついてくる）
-  r.pets.forEach((p, i) => { const s = PSLOT[i % 6]; const tx = r.x + s[0], ty = 1.1 + s[1] + Math.sin(G.t * 3 + i) * .12, tz = r.d + s[2]; if (p.dash > 0) { p.dash -= dt; } else { p.x += (tx - p.x) * Math.min(1, dt * 8); p.y += (ty - p.y) * Math.min(1, dt * 8); p.z = tz; } });
+  r.pets.forEach((p, i) => { const s = PSLOT[i % 6]; const tx = r.x + s[0], ty = 1.1 + s[1] + Math.sin(G.t * 3 + i) * .12, tz = r.d + s[2]; if (p.st) { } else { p.x += (tx - p.x) * Math.min(1, dt * 8); p.y += (ty - p.y) * Math.min(1, dt * 8); p.z = tz; } });
   for (let i = G.parts.length - 1; i >= 0; i--) { const p = G.parts[i]; p.life -= dt; if (p.life <= 0) { G.parts.splice(i, 1); continue; } p.vy = (p.vy || 0) + (p.g || 0) * dt; p.x += (p.vx || 0) * dt; p.y += p.vy * dt; if (p.vr) p.rot += p.vr * dt; }
   if (G.parts.length > 400) G.parts.splice(0, G.parts.length - 400);
   for (let i = G.floats.length - 1; i >= 0; i--) { const f = G.floats[i]; f.life -= dt; f.y += (f.vy || -40) * dt; if (f.life <= 0) G.floats.splice(i, 1); }
@@ -1114,24 +1114,53 @@ function castSpells(r, dt) {
     }
   }
 }
+// 使い魔：敵まで とんでいって こうげきし、もどってくる
+const PET = {
+  cat: { cd: [0, .55, .42, .32], n: [0, 2, 3, 4], dmg: [0, 2, 3, 4.5], range: 14, hy: 1.0, dz: .9 },
+  owl: { cd: [0, 1.3, 1.1, .9], dmg: [0, 6, 9, 13], range: 30, hy: 1.7, dz: .7 },
+  dragon: { cd: [0, 1.1, .95, .8], dmg: [0, 2.2, 3.2, 4.5], range: 20, hy: 2.3, dz: 3.4 }
+};
+function petPick(r, p, T) {
+  const D = PET[p.type], inR = T.filter(o => o.z - r.d < D.range && o.z > r.d + 1.5 && !o.petBy);
+  if (!inR.length) return null;
+  if (p.type === 'owl') return inR.sort((a, b) => b.hp - a.hp)[0];
+  if (p.type === 'cat') return inR.filter(o => p.tier >= 3 || Math.abs(o.x - r.x) < 3).sort((a, b) => a.z - b.z)[0] || null;
+  return inR.filter(o => p.tier >= 3 || inLane(o, r.x)).sort((a, b) => a.z - b.z)[0] || null;
+}
+function petAim(p, o) { const D = PET[p.type]; return { x: o.x + (p.type === 'cat' ? .5 : p.type === 'owl' ? -.4 : 0), y: o.type === 'boss' ? D.hy + 2.5 : o.type === 'mid' ? D.hy + 1 : D.hy, z: o.z - (o.type === 'boss' ? D.dz + 2.5 : D.dz) }; }
 function petsAct(r, dt) {
   const T = targetsAhead(r);
-  for (const p of r.pets) {
-    p.cd -= dt; if (p.cd > 0 || !T.length) continue;
-    if (p.type === 'cat') {
-      const near = T.filter(o => o.z - r.d < 10 && (p.tier >= 3 || inLane(o, r.x))).sort((a, b) => a.z - b.z)[0]; if (!near) continue;
-      p.cd = [0, .42, .32, .26][p.tier]; p.dash = .18; p.x = near.x; p.z = near.z - .6; p.y = 1.2;
-      hitObj(r, near, [0, 1.6, 2.6, 3.6][p.tier], 'cat'); G.fx.push({ k: 'claw', x: near.x, y: 1.2, z: near.z - .3, life: .22, col: p.tier >= 2 ? '#fff27a' : '#ffffff' }); SFX.pet();
-    } else if (p.type === 'owl') {
-      const tgt = T.slice().sort((a, b) => b.hp - a.hp)[0];
-      p.cd = [0, 2.0, 1.7, 1.4][p.tier]; const n = p.tier >= 2 ? 2 : 1;
-      for (let i = 0; i < n; i++) r.shots.push({ k: 'feather', x: p.x, y: p.y, z: p.z + .3, tx: tgt.x + (i ? .3 : 0), vz: 34, dmg: [0, 4, 6, 8][p.tier], hit: new Set(), pierce: 1, stun: p.tier >= 3 ? 1.2 : 0, life: 1.4 });
-    } else if (p.type === 'dragon') {
-      if (!T.some(o => inLane(o, r.x)) && p.tier < 3) continue;
-      p.cd = [0, 1.6, 1.4, 1.2][p.tier]; const xs = p.tier >= 3 ? LX : [r.x];
-      for (const x of xs) r.shots.push({ k: 'dfire', x, y: 1.3, z: p.z + .5, vz: 18, dmg: [0, 4, 6, 8][p.tier], hit: new Set(), pierce: 0, splash: 1, big: p.tier, life: 2 });
+  r.pets.forEach((p, idx) => {
+    const D = PET[p.type];
+    if (!p.st) { p.cd -= dt; if (p.cd > 0) return; const o = petPick(r, p, T); if (!o) return; p.st = 'go'; p.tgt = o; p.t = 0; p.from = { x: p.x, y: p.y, z: p.z }; const a = petAim(p, o); p.dur = clamp(Math.hypot(a.x - p.x, a.z - p.z) / 30, .14, .45); SFX.pet(); return; }
+    const o = p.tgt;
+    if (p.st === 'go') {
+      if (!o || o.dead) { p.st = 'back'; p.t = 0; p.from = { x: p.x, y: p.y, z: p.z }; return; }
+      p.t += dt; const k = Math.min(1, p.t / p.dur), e = k * k * (3 - 2 * k), a = petAim(p, o);
+      p.x = p.from.x + (a.x - p.from.x) * e; p.y = p.from.y + (a.y - p.from.y) * e + Math.sin(k * Math.PI) * (p.type === 'owl' ? 1.5 : .8); p.z = p.from.z + (a.z - p.from.z) * e;
+      if (k >= 1) { p.st = 'hit'; p.t = 0; p.hits = 0; p.ht = 0; if (p.type === 'owl') owlStrike(r, p, o); }
+    } else if (p.st === 'hit') {
+      p.t += dt; const a = petAim(p, o); p.x = a.x; p.y = a.y; p.z = a.z;
+      if (p.type === 'cat') { p.ht -= dt; if (p.ht <= 0 && p.hits < D.n[p.tier] && !o.dead) { p.ht = .09; p.hits++; hitObj(r, o, D.dmg[p.tier], 'cat'); G.fx.push({ k: 'claw', x: o.x, y: a.y + .2, z: o.z - .3, life: .2, col: p.tier >= 3 ? '#c0b0ff' : p.tier >= 2 ? '#fff27a' : '#ffffff', flip: p.hits % 2 }); SFX.pet(); } if (p.hits >= D.n[p.tier] || o.dead) { if (p.t > .12) endHit(p); } }
+      else if (p.type === 'owl') { if (p.t > .22) endHit(p); }
+      else { // ドラゴン：ほのおの いき
+        p.ht -= dt; if (p.ht <= 0 && p.hits < 4) { p.ht = .1; p.hits++; G.fx.push({ k: 'breath', a: { x: p.x, y: p.y - .1, z: p.z + .4 }, b: { x: o.x, y: o.type === 'boss' ? 3 : 1, z: o.z }, life: .16, big: p.tier });
+          const xs = p.tier >= 3 ? [0, 1, 2] : null;
+          for (const o2 of r.objs) if (!o2.dead && (o2.type === 'enemy' || o2.type === 'box' || o2.type === 'mid' || o2.type === 'boss') && Math.abs(o2.z - o.z) < 2.6) { const same = o2 === o || inLane(o2, o.x), adj = Math.abs(o2.x - o.x) < 3.2; if (same) hitObj(r, o2, D.dmg[p.tier], 'dfire'); else if (adj || (xs && o2.type !== 'boss')) hitObj(r, o2, D.dmg[p.tier] * .5, 'dfire'); } }
+        if (p.hits >= 4 && p.t > .45) endHit(p); }
+    } else if (p.st === 'back') {
+      p.t += dt; const s2 = PSLOT[idx % 6], tx = r.x + s2[0], ty = 1.1 + s2[1], tz = r.d + s2[2], k = Math.min(1, p.t / .28), e = k * k * (3 - 2 * k);
+      p.x = p.from.x + (tx - p.from.x) * e; p.y = p.from.y + (ty - p.from.y) * e; p.z = p.from.z + (tz - p.from.z) * e;
+      if (k >= 1) { p.st = null; p.cd = D.cd[p.tier]; }
     }
-  }
+  });
+}
+function endHit(p) { if (p.tgt) p.tgt.petBy = 0; p.st = 'back'; p.t = 0; p.from = { x: p.x, y: p.y, z: p.z }; }
+function owlStrike(r, p, o) {
+  const D = PET.owl; hitObj(r, o, D.dmg[p.tier], 'owl'); if (p.tier >= 3) o.stunT = 1.4;
+  G.fx.push({ k: 'claw', x: o.x, y: p.y, z: o.z - .3, life: .22, col: '#dff2ff', big: 1 });
+  if (p.tier >= 2) for (const dx of [-.35, .35]) r.shots.push({ k: 'feather', x: o.x + dx, y: 1.2, z: o.z + .3, vz: 30, dmg: D.dmg[p.tier] * .5, hit: new Set([o]), pierce: 1, stun: p.tier >= 3 ? 1 : 0, life: .7 });
+  SFX.pet();
 }
 function moveShots(r, dt) {
   for (let i = r.shots.length - 1; i >= 0; i--) {
@@ -1221,7 +1250,7 @@ function resolveRow(r, row) {
 // ================= 中ボス・ボス =================
 function dpsEst(r) {
   let d = 0; for (const k of Object.keys(r.spells)) { const lv = r.spells[k], S = SPELLS[k]; d += S.dmg(lv) * (k === 'fire' ? (lv >= 5 ? 3 : lv >= 4 ? 2 : 1) : 1) / S.cd(lv) * (k === 'fire' || k === 'ice' ? .7 : 1); }
-  for (const p of r.pets) d += p.type === 'cat' ? [0, 1.6, 2.6, 3.6][p.tier] / [0, .42, .32, .26][p.tier] * .5 : p.type === 'owl' ? [0, 4, 6, 8][p.tier] * (p.tier >= 2 ? 2 : 1) / [0, 2, 1.7, 1.4][p.tier] : [0, 4, 6, 8][p.tier] * (p.tier >= 3 ? 3 : 1) / [0, 1.6, 1.4, 1.2][p.tier];
+  for (const p of r.pets) { const D = PET[p.type]; d += p.type === 'cat' ? D.n[p.tier] * D.dmg[p.tier] / (D.cd[p.tier] + .8) : p.type === 'owl' ? D.dmg[p.tier] * (p.tier >= 2 ? 1.6 : 1) / (D.cd[p.tier] + .9) : 4 * D.dmg[p.tier] / (D.cd[p.tier] + 1.1); }
   return d;
 }
 function fightAI(r, o, dt) {
@@ -1293,7 +1322,7 @@ function snap(r) { return JSON.parse(JSON.stringify({ d: r.d, off: r.off, pi: (r
 function restore(r) {
   const c = r.cp; Object.assign(r, { d: c.d, scroll: c.d, off: c.off, pi: c.pi, hp: c.hp, hpMax: c.hpMax, spells: { ...c.spells }, stats: { ...c.stats }, streak: c.streak, floor: c.floor, planEnd: c.planEnd, lastQz: c.lastQz });
   r.wrongs = r.wrongs.slice(0, c.nW);
-  r.pets = c.pets.map(p => ({ ...p, cd: 0, x: r.x, y: 2, z: r.d, dash: 0 })); r.objs = []; r.shots = []; r.fight = null; r.phase = 'run';
+  r.pets = c.pets.map(p => ({ ...p, cd: 0, x: r.x, y: 2, z: r.d, st: null })); r.objs = []; r.shots = []; r.fight = null; r.phase = 'run';
 }
 
 // ================= 終わり =================
@@ -1552,7 +1581,10 @@ function drawWitch(r) {
 function star(c, x, y, R) { c.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? R * .45 : R; c.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } c.closePath(); c.fill(); }
 // ---------- つかいま ----------
 function drawPet(p, r) {
-  const q = proj(p.x, p.y, p.z); if (!q) return; const s = q.s * (.5 + p.tier * .12), t = G.t, T = p.tier;
+  const q = proj(p.x, p.y, p.z); if (!q) return; const act = !!p.st, s = q.s * (.5 + p.tier * .12) * (act ? 1.25 : 1), t = G.t, T = p.tier;
+  const pc = p.type === 'cat' ? (T >= 3 ? '#9a7aff' : '#ffffff') : p.type === 'owl' ? '#cfe8ff' : (T >= 3 ? '#ffd34d' : '#ff8a3a');
+  if (p.st === 'go' || p.st === 'back') { const f = proj(p.from.x, p.from.y, p.from.z); if (f) { const g = ctx.createLinearGradient(f.x, f.y, q.x, q.y); g.addColorStop(0, pc + '00'); g.addColorStop(1, pc + 'cc'); ctx.strokeStyle = g; ctx.lineCap = 'round'; ctx.lineWidth = s * .5; ctx.beginPath(); ctx.moveTo(f.x + (q.x - f.x) * .45, f.y + (q.y - f.y) * .45); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.lineCap = 'butt'; } }
+  if (act) glow(ctx, q.x, q.y, s * 1.6, pc + '88');
   ctx.save(); ctx.translate(q.x, q.y); ctx.scale(s, s);
   if (T >= 3) glow(ctx, 0, 0, 1.6, p.type === 'cat' ? 'rgba(120,80,255,.55)' : p.type === 'owl' ? 'rgba(200,230,255,.6)' : 'rgba(255,200,60,.6)');
   if (p.type === 'cat') {
@@ -1686,7 +1718,8 @@ function drawShot(s) {
 }
 function drawFx(fx) {
   if (fx.k === 'bolt') { const a = proj(fx.a.x, fx.a.y, fx.a.z), b = proj(fx.b.x, fx.b.y, fx.b.z); if (!a || !b) return; if (fx.sky) glow(ctx, b.x, b.y, b.s * 1.4, 'rgba(255,245,150,.8)'); ctx.strokeStyle = '#fff27a'; ctx.shadowColor = '#fff27a'; ctx.shadowBlur = 14; ctx.lineWidth = fx.sky ? Math.max(4, b.s * .14) : 3; ctx.beginPath(); ctx.moveTo(a.x, a.y); for (let i = 1; i < 7; i++) ctx.lineTo(a.x + (b.x - a.x) * i / 7 + rnd(-12, 12), a.y + (b.y - a.y) * i / 7 + rnd(-12, 12)); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.shadowBlur = 0; ctx.lineWidth = 1.2; ctx.strokeStyle = '#fff'; ctx.stroke(); }
-  else if (fx.k === 'claw') { const p = proj(fx.x, fx.y, fx.z); if (!p) return; const s = p.s, k = 1 - fx.life / .22; ctx.strokeStyle = fx.col; ctx.lineWidth = Math.max(2, s * .08); ctx.lineCap = 'round'; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(p.x - s * .5 + i * s * .2, p.y - s * .6); ctx.lineTo(p.x - s * .5 + i * s * .2 + s * k, p.y - s * .6 + s * k); ctx.stroke(); } ctx.lineCap = 'butt'; }
+  else if (fx.k === 'claw') { const p = proj(fx.x, fx.y, fx.z); if (!p) return; const s = p.s * (fx.big ? 1.6 : 1.3), k = Math.min(1, (1 - fx.life / .22) * 1.6), dir = fx.flip ? -1 : 1; ctx.save(); ctx.translate(p.x, p.y); ctx.scale(dir, 1); glow(ctx, 0, 0, s * .9, fx.col + '66'); ctx.strokeStyle = fx.col; ctx.shadowColor = fx.col; ctx.shadowBlur = 8; ctx.lineWidth = Math.max(3, s * .11); ctx.lineCap = 'round'; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(-s * .55 + i * s * .22, -s * .55); ctx.lineTo(-s * .55 + i * s * .22 + s * 1.1 * k, -s * .55 + s * 1.1 * k); ctx.stroke(); } ctx.shadowBlur = 0; ctx.lineCap = 'butt'; ctx.restore(); }
+  else if (fx.k === 'breath') { const a = proj(fx.a.x, fx.a.y, fx.a.z), b = proj(fx.b.x, fx.b.y, fx.b.z); if (!a || !b) return; const n = 7, big = 1 + (fx.big || 1) * .25; for (let i = 0; i <= n; i++) { const q = i / n, x = a.x + (b.x - a.x) * q + rnd(-4, 4), y = a.y + (b.y - a.y) * q + rnd(-4, 4), R = (a.s * .25 + (b.s * .9 - a.s * .25) * q) * big; glow(ctx, x, y, R, i > n - 2 ? 'rgba(255,240,150,.9)' : 'rgba(255,120,30,.85)'); } flame(ctx, b.x, b.y + b.s * .4, b.s * .7 * big, G.t, fx.a.z); }
 }
 function drawParts() {
   for (const p of G.parts) {
