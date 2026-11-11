@@ -550,6 +550,8 @@ const SANSU_GEN = [
   }
 ];
 const KEISAN_GEN = [
+  // 1 1年 1けたの たし算・ひき算
+  () => { if (Math.random() < .55) { const a = RI(1, 9), b = RI(1, 9); const s = a + b; return Q(`${a} ＋ ${b} ＝ ？`, s, [s + 1, s - 1, s + 2], s >= 10 ? `${a}に あと${10 - a}で 10。のこり${b - (10 - a)}で ${s}。` : `${a}から ${b}つ かぞえると ${s}。`); } const x = RI(2, 9), y = RI(1, x - 1), d = x - y; return Q(`${x} − ${y} ＝ ？`, d, [d + 1, d === 0 ? 2 : d - 1, d + 2], `${x}から ${y}つ もどると ${d}。`); },
   // 1 2年 たし算・ひき算（2けた）
   () => { const a = RI(12, 89), b = RI(11, 89); if (Math.random() < .5 && a + b < 120) return Q(`${a} ＋ ${b} ＝ ？`, a + b, [a + b + 10, a + b - 1, a + b - 10], `一の位から計算。くり上がりに注意。`); const x = Math.max(a, b), y = Math.min(a, b); return Q(`${x} − ${y} ＝ ？`, x - y, [x - y + 10, x - y + 1, x + y], `一の位から計算。くり下がりに注意。`); },
   // 2 2年 九九
@@ -558,8 +560,6 @@ const KEISAN_GEN = [
   () => { if (Math.random() < .55) { const b = RI(2, 9), q = RI(2, 9); return Q(`${b * q} ÷ ${b} ＝ ？`, q, [q + 1, q - 1, b * q - b], `${b}×□＝${b * q} の□をさがす。`); } const a = RI(120, 899), b = RI(101, 499); if (Math.random() < .5 && a + b < 1000) return Q(`${a} ＋ ${b} ＝ ？`, a + b, [a + b + 100, a + b - 10, a + b + 1], `位をそろえて計算。`); const x = Math.max(a, b), y = Math.min(a, b); return Q(`${x} − ${y} ＝ ？`, x - y, [x - y + 100, x - y + 10, x - y - 1], `位をそろえて計算。くり下がりに注意。`); },
   // 4 4年 2けた×2けた・あまりのあるわり算
   () => { if (Math.random() < .5) { const a = RI(12, 39), b = RI(12, 29); return Q(`${a} × ${b} ＝ ？`, a * b, [a * b + a, a * b - 10, a * (b % 10) + a * Math.floor(b / 10)], `${a}×${b % 10}と${a}×${Math.floor(b / 10)}0をたす。`); } const b = RI(3, 9), q = RI(3, 12), r = RI(1, b - 1), n = b * q + r; return Q(`${n} ÷ ${b} ＝ ？`, `${q}あまり${r}`, [`${q + 1}あまり${r}`, `${q}あまり${r + b > 9 ? r - 1 : r + 1}`, `${q - 1}あまり${r + b}`], `${b}×${q}＝${b * q}、のこり${r}。あまりはわる数より小さい。`); },
-  // 5 5年 小数のかけ算・わり算
-  () => SANSU_GEN[0]()
 ];
 
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
@@ -874,7 +874,7 @@ const WORLDS = [
   { key: 'keisan', name: 'けいさん', place: 'しゅぎょうの やま', icon: '⛰️', color: '#8a6ad0', speed: 7, props: 'rocks',
     theme: { sky: ['#6ab8ff', '#e8f4ff'], ground: '#7a8a6a', ground2: '#6e7e5e', road: '#8a8478', road2: '#7a7468', edge: '#d8d0c0' },
     enemies: ['rock', 'bat', 'slime'],
-    stages: ['2年 たし算・ひき算', '2年 九九', '3年 わり算・3けた', '4年 2けた×2けた・あまり', '5年 小数のかけ算・わり算'] }
+    stages: ['1年 1けたの たし算・ひき算', '2年 たし算・ひき算', '2年 九九', '3年 わり算・3けた', '4年 2けた×2けた・あまり'] }
 ];
 const TOWER = { key: 'tower', name: 'ミックスの とう', place: 'ミックスの とう', icon: '🗼', color: '#c060ff', speed: 6, props: 'crystals',
   theme: { sky: ['#0a0620', '#3a1a6a'], ground: '#140c2a', ground2: '#100a22', road: '#2a1a4a', road2: '#24163e', edge: '#c890ff' }, enemies: ['ghost', 'bat', 'gear', 'book', 'mushroom', 'rock'] };
@@ -883,7 +883,7 @@ const BOSSES = {
   sansu: [['しょうすうてんの ゴーレム', 'golem', '#5a6a8a', '#7fe0ff'], ['ぶんすうの ドラゴン', 'dragon', '#3a6ab8', '#c9f2ff'], ['へいきんの まどうし', 'lich', '#1f2a4a', '#7fd0ff'], ['わりあいの まじょ', 'lich', '#4a2a6a', '#ffb0ff'], ['ずけいの まおう', 'demon', '#1a2440', '#5ad1ff']],
   rika: [['かみなりぐもの ドラゴン', 'dragon', '#5a6a8a', '#fff27a'], ['いばらの ゴーレム', 'golem', '#5a7a3a', '#a6ff7a'], ['しんかいの まどうし', 'lich', '#1a3a4a', '#7fffe0'], ['だくりゅうの ドラゴン', 'dragon', '#6a5a3a', '#c8e0ff'], ['じしゃくの まおう', 'demon', '#2a1a1a', '#ff6a3a']],
   shakai: [['さばくの ゴーレム', 'golem', '#a08050', '#ffd34d'], ['あらしの ドラゴン', 'dragon', '#3f7f9f', '#d9ffff'], ['けむりの まどうし', 'lich', '#3a3a3a', '#ffb060'], ['でんぱの まじょ', 'lich', '#2a1a4a', '#7fffb0'], ['ちずぬすみの まおう', 'demon', '#1a2a1a', '#ffe060']],
-  keisan: [['いわやまの ゴーレム', 'golem', '#7a7266', '#ffb060'], ['くくの ドラゴン', 'dragon', '#3f8f5a', '#d9ffb0'], ['わりざんの まどうし', 'lich', '#2a2a4a', '#c9a8ff'], ['あまりの ゴーレム', 'golem', '#5a5a7a', '#7fe0ff'], ['けいさんの まおう', 'demon', '#1a0a2a', '#ff5ad8']]
+  keisan: [['ひとけたの ゴーレム', 'golem', '#8a9a7a', '#ffe08a'], ['いわやまの ゴーレム', 'golem', '#7a7266', '#ffb060'], ['くくの ドラゴン', 'dragon', '#3f8f5a', '#d9ffb0'], ['わりざんの まどうし', 'lich', '#2a2a4a', '#c9a8ff'], ['あまりの まおう', 'demon', '#1a0a2a', '#ff5ad8']]
 };
 function poolNext(wk, si) {
   if (wk === 'sansu') return Object.assign({ id: 'g' }, SANSU_GEN[si]());
